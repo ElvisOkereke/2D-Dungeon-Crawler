@@ -1,4 +1,3 @@
-using System.Threading;
 using System.Collections;
 using UnityEngine;
 
@@ -7,24 +6,37 @@ public class PlayerMovement : MonoBehaviour
     private Rigidbody2D body;
     private Animator anim;
     private BoxCollider2D boxCollider;
-    private float wallJumpCooldown;
+    private float wallJumpCooldown, dashCooldown = 2.5f, dashTimeLeft, lastImageXpos, lastPlayerXpos, lastDash = -100;
 
     private bool attacking, dashattacking, isDashing;
 
     [SerializeField] private float speed;
     [SerializeField] private float jumpPower;
-    private float dashPower = 4f;
+    [SerializeField] private float dashPower = 2f;
+    private float dashTime = 0.2f;
     private float doubleTapTime;
-    public float dashSpeed = 10f;
+    public float distanceBetweenImages = 0.1f;
     KeyCode lastKeyCode;
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private LayerMask wallLayer;
+    [SerializeField] private LayerMask stairsLayer;
 
     private void Awake()
     {
         body = GetComponent<Rigidbody2D>();
         anim = GetComponent<Animator>();
         boxCollider = GetComponent<BoxCollider2D>();
+    }
+
+    private void AttemptToDash(){
+
+        isDashing = true;
+        dashTimeLeft = dashTime;
+        lastDash = Time.time;
+
+        PlayerAfterImagePool.Instance.GetFromPool();
+        lastImageXpos = transform.position.x;
+
     }
 
     private void Update()
@@ -34,21 +46,41 @@ public class PlayerMovement : MonoBehaviour
          *? method from unity, Horizontal Input is a value of 1 when you are pressing left or right arrow, and 0 if are not */
         float horizontalInput = Input.GetAxis("Horizontal");
 
+        if(isOnStairs() && (horizontalInput == 0))
+        {body.velocity = Vector2.zero;
+         body.gravityScale = 0;}
+        else if(!isOnStairs())
+         body.gravityScale = 3;
+
+        CheckInput();
+
+        if(Input.GetButtonDown("Dash"))
+        {
+
+            if(Time.time >= (lastDash + dashCooldown))
+            AttemptToDash();
+        }
+
+        
+
+
         /**
          *?Player Turning left and right while keeping the player size the same */
 
         if (horizontalInput > 0.001f && transform.localScale.x < 0)
+            {
             transform.localScale = new Vector3((-1) * transform.localScale.x, transform.localScale.y, transform.localScale.z);
+            lastPlayerXpos = transform.position.x + (horizontalInput * 1);}
         else if (horizontalInput < -0.001f && transform.localScale.x > 0)
             transform.localScale = new Vector3((-1) * transform.localScale.x, transform.localScale.y, transform.localScale.z);
 
         /**
          *?is player running */
-        anim.SetBool("run", horizontalInput != 0 && isGrounded());
+        anim.SetBool("run", horizontalInput != 0 && (isGrounded() || isOnStairs()));
 
         /**
          *?is player jumping */
-        if (body.velocity.y > 0.01)
+        if (body.velocity.y > 0.01 && !isOnStairs())
             anim.SetBool("jump", true);
         else if (body.velocity.y > 0.01 && onWall())
             anim.SetBool("jump", true);
@@ -80,25 +112,28 @@ public class PlayerMovement : MonoBehaviour
             dashattacking = false;}
 
 
-        if (Input.GetKeyDown(KeyCode.D))
+        if (Input.GetKey(KeyCode.L) && (horizontalInput == 1))
             {
-              if (doubleTapTime > Time.time && lastKeyCode == KeyCode.D)  
+              if (doubleTapTime > Time.time && lastKeyCode == KeyCode.L)  
                 StartCoroutine(Dash(1f));
                 else
-                doubleTapTime = Time.time + 0.5f;
+                doubleTapTime = Time.time + 0.1f;
 
-                lastKeyCode = KeyCode.D;
+                lastKeyCode = KeyCode.L;
+
+                
             }   
 
 
-        if (Input.GetKeyDown(KeyCode.A))
+        if (Input.GetKey(KeyCode.H) && (horizontalInput == -1))
             {
-              if (doubleTapTime > Time.time && lastKeyCode == KeyCode.A)  
+              if (doubleTapTime > Time.time && lastKeyCode == KeyCode.H)  
                 StartCoroutine(Dash(-1f));
                 else
-                doubleTapTime = Time.time + 0.5f;
+                doubleTapTime = Time.time + 0.1f;
 
-                lastKeyCode = KeyCode.A;
+                lastKeyCode = KeyCode.H;
+               
             }   
         
             
@@ -106,16 +141,18 @@ public class PlayerMovement : MonoBehaviour
 
         /**
         *?is player falling */
-        if (body.velocity.y < -0.00001 && !onWall())
+        if (body.velocity.y < -0.00001 && !onWall() && !isOnStairs() && !isGrounded())
             anim.SetBool("fall", true);
         else
             anim.SetBool("fall", false);
-
+        
+        
+        if ((isGrounded() || isOnStairs()) && !(horizontalInput == 0))
+                body.velocity = new Vector2(Input.GetAxis("Horizontal") * speed, body.velocity.y);
 
         if (wallJumpCooldown > 0.2f && !isDashing){
                 
-                if (!attacking || !dashattacking)
-                body.velocity = new Vector2(Input.GetAxis("Horizontal") * speed, body.velocity.y);
+                
 
                 if(onWall() && !isGrounded() && (body.velocity.y < 0.01) && (  body.velocity.y > -0.01)){
 
@@ -139,12 +176,14 @@ public class PlayerMovement : MonoBehaviour
 
     }
 
+    private void CheckInput(){
+
+
+    }
+
     private void FixedUpdate() {
 
-        float horizontalInput = Input.GetAxis("Horizontal");
-
-        if (!isDashing)
-            body.velocity = new Vector2(horizontalInput * dashSpeed, body.velocity.y);
+        
 
     }
 
@@ -163,9 +202,11 @@ public class PlayerMovement : MonoBehaviour
 
     private void Dash()
     {
+        float horiInput = Input.GetAxis("Horizontal");
+
         if ((isGrounded() && !onWall()))
         {anim.SetBool("dash", true);
-            body.velocity = new Vector2(dashPower, body.velocity.y);}
+            body.velocity = new Vector2(dashPower * horiInput, body.velocity.y);}
         
     }
 
@@ -186,6 +227,14 @@ public class PlayerMovement : MonoBehaviour
     {
 
         RaycastHit2D raycastHit = Physics2D.BoxCast(boxCollider.bounds.center, boxCollider.bounds.size, 0, Vector2.down, 0.1f, groundLayer);
+
+        return raycastHit.collider != null;
+
+    }
+    private bool isOnStairs()
+    {
+
+        RaycastHit2D raycastHit = Physics2D.BoxCast(boxCollider.bounds.center, boxCollider.bounds.size, 0, Vector2.down, 0.1f, stairsLayer);
 
         return raycastHit.collider != null;
 
@@ -213,6 +262,34 @@ public class PlayerMovement : MonoBehaviour
         body.gravityScale = gravity;
 
 
+    }
+    private void CheckDash()
+    {
+
+        if (isDashing){
+
+
+            if(dashTimeLeft > 0)
+            {dashTimeLeft -= Time.deltaTime;
+
+            if(Mathf.Abs(transform.position.x - lastImageXpos) > distanceBetweenImages)
+            {
+                PlayerAfterImagePool.Instance.GetFromPool();
+                lastImageXpos = transform.position.x;
+
+            }
+            
+        }
+
+        if(dashTimeLeft <= 0 || onWall())
+        {
+            isDashing = false;
+
+        }
+
+        }
+
+        
     }
 
 

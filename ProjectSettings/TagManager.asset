@@ -19,7 +19,7 @@ TagManager:
   - Wall
   - Ladder
   - Enemies
-  - 
+  - Stairs
   - 
   - 
   - 
@@ -44,4 +44,7 @@ TagManager:
   m_SortingLayers:
   - name: Default
     uniqueID: 0
+    locked: 0
+  - name: Player
+    uniqueID: 759431997
     locked: 0
